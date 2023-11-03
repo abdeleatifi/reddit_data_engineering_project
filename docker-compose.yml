@@ -1,61 +1,87 @@
 version: '3'
 
-x-airflow-common:
-  &airflow-common
-  build:
-    context: .
-    dockerfile: Dockerfile
-  image: custom-airflow:2.7.1-python3.9
-  env_file:
-    - airflow.env
+x-airflow-common: &airflow-common
+  image: puckel/docker-airflow:1.10.9
+  environment:
+    - LOAD_EX=n
+    - EXECUTOR=Local
+    - FERNET_KEY=your_fernet_key_here
   volumes:
-    - ./config:/opt/airflow/config
-    - ./dags:/opt/airflow/dags
-    - ./data:/opt/airflow/data
-    - ./etls:/opt/airflow/etls
-    - ./logs:/opt/airflow/logs
-    - ./pipelines:/opt/airflow/pipelines
-    - ./plugins:/opt/airflow/plugins
-    - ./tests:/opt/airflow/tests
-    - ./utils:/opt/airflow/utils
-   # - ./airflow.cfg:/opt/airflow/airflow.cfg
-    - ./requirements.txt:/opt/airflow/requirements.txt
+    - ./config:/usr/local/airflow/config
+    - ./dags:/usr/local/airflow/dags
+    - ./data:/usr/local/airflow/data
+    - ./etls:/usr/local/airflow/etls
+    - ./logs:/usr/local/airflow/logs
+    - ./pipelines:/usr/local/airflow/pipelines
+    - ./plugins:/usr/local/airflow/plugins
+    - ./tests:/usr/local/airflow/tests
+    - ./utils:/usr/local/airflow/utils
+  ports:
+    - "8080:8080"
   depends_on:
-    - postgres
     - redis
+    - postgres
+  networks:
+    - airflow
 
 services:
-  postgres:
-    image: postgres:12
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: airflow_reddit
-      POSTGRES_PORT: 5432
-    ports:
-      - "5432:5432"
-
-  redis:
-    image: redis:latest
-    ports:
-      - "6379:6379"
-
-  airflow-init:
-    <<: *airflow-common
-    command: >
-      bash -c "pip install -r /opt/airflow/requirements.txt && airflow db init && airflow db upgrade && airflow users create --username admin --firstname admin --lastname admin --role Admin --email airflow@airflow.com --password admin"
-    restart: "no"
-
-  airflow-webserver:
+  webserver:
     <<: *airflow-common
     command: webserver
     ports:
       - "8080:8080"
+    volumes:
+    - ./config:/usr/local/airflow/config
+    - ./dags:/usr/local/airflow/dags
+    - ./data:/usr/local/airflow/data
+    - ./etls:/usr/local/airflow/etls
+    - ./logs:/usr/local/airflow/logs
+    - ./pipelines:/usr/local/airflow/pipelines
+    - ./plugins:/usr/local/airflow/plugins
+    - ./tests:/usr/local/airflow/tests
+    - ./utils:/usr/local/airflow/utils
+    networks:
+      - airflow
 
-  airflow-scheduler:
+  scheduler:
     <<: *airflow-common
     command: scheduler
+    networks:
+      - airflow
 
-  airflow-worker:
+  worker:
     <<: *airflow-common
-    command: celery worker
+    command: worker
+    networks:
+      - airflow
+
+  flower:
+    <<: *airflow-common
+    command: flower
+    ports:
+      - "5555:5555"
+    networks:
+      - airflow
+
+  postgres:
+    image: postgres:10
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    networks:
+      - airflow
+
+  redis:
+    image: redis:latest
+    networks:
+      - airflow
+
+networks:
+  airflow:
+    driver: bridge
+
+volumes:
+  postgres:
